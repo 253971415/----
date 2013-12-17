@@ -1,0 +1,95 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+import urllib
+import urllib2
+import httplib
+from weibo import APIClient
+import weibo
+import re
+
+APP_KEY = '1037619665' #微博API_KEY
+APP_SECRET = '710911f3c0e699b6851f8a61054fe096' #微博SECRET_KEY
+CALLBACK_URL= 'https://api.weibo.com/oauth2/default.html' #回调网页
+
+LOGIN_URL = 'https://api.weibo.com/oauth2/authorize' #登陆网页
+
+def get_token(client):
+	url = client.get_authorize_url() #得到获取用户授权的地址
+	conn = httplib.HTTPSConnection('api.weibo.com') #建立到API服务器的HTTPS连接
+	username = raw_input("请输入用户名:") #获取用户名
+	password = raw_input("请输入密码:") #获取密码
+	params = urllib.urlencode({ #生成POST参数
+		'action':'submit',
+		'withOfficalFlag':'0',
+		'ticket':'',
+		'isLoginSina':'',
+		'response_type':'code',
+		'regCallback':'',
+		'redirect_uri':CALLBACK_URL,
+		'client_id':APP_KEY,
+		'state':'',
+		'from':'',
+		'userId':username,
+		'passwd':password,
+	})
+	conn.request('POST','/oauth2/authorize', params, { # 生成请求以及HTTP头参数
+		'Referer' : url,
+		'Content-Type': 'application/x-www-form-urlencoded',
+	})
+	res = conn.getresponse() # 得到服务器响应
+	
+	for line in res.msg.headers: # 获取服务器返回的 code 值
+		if 'Location' in line:
+			return line.strip().split('=')[1]
+	
+	conn.close()
+	
+def get_friends_list(client, uid):
+	cursor = 0
+	users = []
+	retry = 0
+	while cursor <> -1:
+		result = client.friendships.friends.get(uid = uid, cursor = cursor)
+		cursor = result['next_cursor']
+		if cursor == 0:
+			cursor = -1
+		users += result['users']
+
+	return users
+	
+def get_userlist(client, uid):
+	users = get_friends_list(client, uid)
+	user_list = [];
+	
+	for user in users:
+		user_list.append({
+			'username': user['screen_name'],
+			'followers_count': user['followers_count'],
+			'friends_count': user['friends_count'],
+		})
+	return user_list
+	
+if __name__ == '__main__':
+	client = APIClient(
+		app_key=APP_KEY, 
+		app_secret=APP_SECRET, 
+		redirect_uri=CALLBACK_URL) #创建微博客户端实例
+	print '正在登陆...'
+	try:
+		token = get_token(client) #获取授权token
+		r = client.request_access_token(token) #用token获取access_token、有效时间以及uid
+		print '登陆成功！'
+		print '获取信息中...'
+		client.set_access_token(r.access_token, r.expires_in) #设置客户端的access_token
+		users_list = get_userlist(client, r.uid) #获取用户的关注列表
+		#按照粉丝数排列被关注用户
+		users_list_sorted = sorted(users_list, reverse = True, key = lambda x:x['followers_count'])
+		#输出结果
+		i = 0
+		print '=== 所有关注人 / 按粉丝量排序 ==='
+		for user in users_list_sorted:
+			i = i + 1
+			print '#' + str(i) + '  ' + user['username'] + ' ' + str(user['followers_count'])
+	except weibo.APIError, e:
+		print '操作失败，错误信息: ' + str(e)
+		
