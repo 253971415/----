@@ -1,0 +1,95 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+import urllib
+import urllib2
+import httplib
+from weibo import APIClient
+import weibo
+import re
+
+APP_KEY = '1037619665' 
+APP_SECRET = '710911f3c0e699b6851f8a61054fe096' 
+CALLBACK_URL= 'https://api.weibo.com/oauth2/default.html' 
+
+LOGIN_URL = 'https://api.weibo.com/oauth2/authorize' 
+
+def get_token(client):
+	url = client.get_authorize_url() 
+	conn = httplib.HTTPSConnection('api.weibo.com') 
+	username = raw_input
+	password = raw_input
+	params = urllib.urlencode({ 
+		'action':'submit',
+		'withOfficalFlag':'0',
+		'ticket':'',
+		'isLoginSina':'',
+		'response_type':'code',
+		'regCallback':'',
+		'redirect_uri':CALLBACK_URL,
+		'client_id':APP_KEY,
+		'state':'',
+		'from':'',
+		'userId':username,
+		'passwd':password,
+	})
+	conn.request('POST','/oauth2/authorize', params, { 
+		'Referer' : url,
+		'Content-Type': 'application/x-www-form-urlencoded',
+	})
+	res = conn.getresponse() 
+	
+	for line in res.msg.headers: 
+		if 'Location' in line:
+			return line.strip().split('=')[1]
+	
+	conn.close()
+	
+def get_friends_list(client, uid):
+	cursor = 0
+	users = []
+	retry = 0
+	while cursor <> -1:
+		result = client.friendships.friends.get(uid = uid, cursor = cursor)
+		cursor = result['next_cursor']
+		if cursor == 0:
+			cursor = -1
+		users += result['users']
+
+	return users
+	
+def get_userlist(client, uid):
+	users = get_friends_list(client, uid)
+	user_list = [];
+	
+	for user in users:
+		user_list.append({
+			'username': user['screen_name'],
+			'followers_count': user['followers_count'],
+			'friends_count': user['friends_count'],
+		})
+	return user_list
+	
+if __name__ == '__main__':
+	client = APIClient(
+		app_key=APP_KEY, 
+		app_secret=APP_SECRET, 
+		redirect_uri=CALLBACK_URL) 
+	print '正在登陆...'
+	try:
+		token = get_token(client) 
+		r = client.request_access_token(token) 
+		print '登陆成功！'
+		print '获取信息中...'
+		client.set_access_token(r.access_token, r.expires_in) 
+		users_list = get_userlist(client, r.uid) 
+	
+		users_list_sorted = sorted(users_list, reverse = True, key = lambda x:x['followers_count'])
+		
+		i = 0
+		print 
+		for user in users_list_sorted:
+			i = i + 1
+			print '#' + str(i) + '  ' + user['username'] + ' ' + str(user['followers_count'])
+	except weibo.APIError, e:
+		print '操作失败，错误信息: ' + str(e)
+		
